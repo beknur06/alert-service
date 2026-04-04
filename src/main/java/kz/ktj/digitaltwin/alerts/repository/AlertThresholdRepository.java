@@ -8,5 +8,7 @@ import java.util.UUID;
 
 public interface AlertThresholdRepository extends JpaRepository<AlertThreshold, UUID> {
 
+    List<AlertThreshold> findByEnabledTrue();
+
     List<AlertThreshold> findByEnabledTrueAndApplicableToIn(List<String> types);
 }

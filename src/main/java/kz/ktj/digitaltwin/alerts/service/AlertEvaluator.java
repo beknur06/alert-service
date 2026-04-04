@@ -179,12 +179,13 @@ public class AlertEvaluator {
     private void refreshCacheIfNeeded(String locoType) {
         long now = System.currentTimeMillis();
         if (now - lastCacheRefresh > 60_000) {
-            List<AlertThreshold> all = thresholdRepository
-                .findByEnabledTrueAndApplicableToIn(List.of("BOTH", locoType));
+            // Load ALL enabled thresholds; isApplicable() handles per-loco filtering at eval time
+            List<AlertThreshold> all = thresholdRepository.findByEnabledTrue();
             Map<String, AlertThreshold> newCache = new LinkedHashMap<>();
             for (AlertThreshold t : all) newCache.put(t.getParamName(), t);
             thresholdCache = newCache;
             lastCacheRefresh = now;
+            log.debug("Threshold cache refreshed: {} entries", newCache.size());
         }
     }
 }

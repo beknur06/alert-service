@@ -26,7 +26,7 @@ public class DefaultThresholdSeeder {
         log.info("Seeding default alert thresholds...");
         repository.saveAll(List.of(
             threshold("coolant_temp", "Охл. жидкость",
-                null, 88.0, null, 95.0,
+                null, 93.0, null, 105.0,
                 "Снизьте нагрузку, проверьте вентиляторы",
                 "Остановите поезд, проверьте систему охлаждения", "TE33A"),
 

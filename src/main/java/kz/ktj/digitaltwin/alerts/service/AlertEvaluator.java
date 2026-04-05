@@ -86,7 +86,7 @@ public class AlertEvaluator {
 
                 log.info("[{}] ALERT {}: {} = {} (threshold breached)", locoId, triggered, paramName, value);
             } else {
-                autoResolve(locoId, paramName);
+//                autoResolve(locoId, paramName);
                 evaluatedParams.add(paramName);
             }
         }

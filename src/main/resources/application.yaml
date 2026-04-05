@@ -45,7 +45,7 @@ redis:
 
 # Alert cooldown: don't re-fire same alert within N seconds
 alert:
-  cooldown-seconds: 30
+  cooldown-seconds: 300
 
 management:
   endpoints:

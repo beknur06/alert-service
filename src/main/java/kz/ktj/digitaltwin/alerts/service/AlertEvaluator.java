@@ -21,15 +21,6 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Оценивает каждый параметр телеметрии по порогам.
- *
- * Логика:
- *  1. Для каждого параметра проверить WARNING и CRITICAL пороги
- *  2. Если порог превышен И cooldown истёк → создать Alert
- *  3. Если параметр вернулся в норму → автоматически RESOLVE активный алерт
- *  4. Опубликовать событие в Redis для realtime UI
- */
 @Service
 public class AlertEvaluator {
 
@@ -41,11 +32,9 @@ public class AlertEvaluator {
     private final ObjectMapper objectMapper;
     private final int cooldownSeconds;
 
-    /** Кеш порогов: paramName → threshold */
     private volatile Map<String, AlertThreshold> thresholdCache = new HashMap<>();
     private volatile long lastCacheRefresh = 0;
 
-    /** Cooldown tracker: locomotiveId:paramName → last alert time */
     private final ConcurrentHashMap<String, Instant> cooldowns = new ConcurrentHashMap<>();
 
     public AlertEvaluator(
@@ -62,7 +51,7 @@ public class AlertEvaluator {
     }
 
     public void evaluate(TelemetryEnvelope envelope) {
-        refreshCacheIfNeeded(envelope.getLocomotiveType());
+        refreshCacheIfNeeded();
 
         Map<String, Double> params = envelope.getParameters();
         String locoId = envelope.getLocomotiveId();
@@ -77,48 +66,38 @@ public class AlertEvaluator {
             Double value = params.get(paramName);
             if (value == null) continue;
 
-            // Check CRITICAL first, then WARNING
             Severity triggered = checkThreshold(value, threshold);
 
             if (triggered != null) {
-                // Alert triggered — check cooldown
                 String cooldownKey = locoId + ":" + paramName;
                 Instant lastFired = cooldowns.get(cooldownKey);
                 if (lastFired != null &&
                     Duration.between(lastFired, Instant.now()).getSeconds() < cooldownSeconds) {
-                    continue; // too soon
+                    continue;
                 }
 
                 Alert alert = createAlert(envelope, paramName, threshold, value, triggered);
                 alertRepository.save(alert);
                 cooldowns.put(cooldownKey, Instant.now());
-
                 newEvents.add(AlertEvent.from(alert));
-                log.info("[{}] ALERT {}: {} = {} (threshold breached)",
-                    locoId, triggered, paramName, value);
 
+                log.info("[{}] ALERT {}: {} = {} (threshold breached)", locoId, triggered, paramName, value);
             } else {
-                // Parameter in normal range — auto-resolve any active alerts
                 autoResolve(locoId, paramName);
             }
         }
 
-        // Publish new alerts to Redis for realtime UI
         if (!newEvents.isEmpty()) {
             publishToRedis(locoId, newEvents);
         }
     }
 
     private Severity checkThreshold(double value, AlertThreshold t) {
-        // CRITICAL check
         if (t.getCriticalHigh() != null && value >= t.getCriticalHigh()) return Severity.CRITICAL;
-        if (t.getCriticalLow() != null && value <= t.getCriticalLow()) return Severity.CRITICAL;
-
-        // WARNING check
-        if (t.getWarningHigh() != null && value >= t.getWarningHigh()) return Severity.WARNING;
-        if (t.getWarningLow() != null && value <= t.getWarningLow()) return Severity.WARNING;
-
-        return null; // within normal range
+        if (t.getCriticalLow()  != null && value <= t.getCriticalLow())  return Severity.CRITICAL;
+        if (t.getWarningHigh()  != null && value >= t.getWarningHigh())  return Severity.WARNING;
+        if (t.getWarningLow()   != null && value <= t.getWarningLow())   return Severity.WARNING;
+        return null;
     }
 
     private Alert createAlert(TelemetryEnvelope envelope, String paramName,
@@ -152,8 +131,7 @@ public class AlertEvaluator {
     private void autoResolve(String locomotiveId, String paramName) {
         List<Alert> active = alertRepository
             .findByLocomotiveIdAndParamNameAndStatusAndTriggeredAtAfter(
-                locomotiveId, paramName, Status.ACTIVE,
-                Instant.now().minusSeconds(3600)); // only recent
+                locomotiveId, paramName, Status.ACTIVE, Instant.now().minusSeconds(3600));
 
         for (Alert alert : active) {
             alert.setStatus(Status.RESOLVED);
@@ -176,10 +154,9 @@ public class AlertEvaluator {
         return "BOTH".equals(applicableTo) || applicableTo.equals(locoType);
     }
 
-    private void refreshCacheIfNeeded(String locoType) {
+    private void refreshCacheIfNeeded() {
         long now = System.currentTimeMillis();
         if (now - lastCacheRefresh > 60_000) {
-            // Load ALL enabled thresholds; isApplicable() handles per-loco filtering at eval time
             List<AlertThreshold> all = thresholdRepository.findByEnabledTrue();
             Map<String, AlertThreshold> newCache = new LinkedHashMap<>();
             for (AlertThreshold t : all) newCache.put(t.getParamName(), t);

@@ -25,20 +25,17 @@ public class AlertController {
         this.thresholdRepository = thresholdRepository;
     }
 
-    /** GET /api/v1/alerts/{locomotiveId} — all recent alerts */
     @GetMapping("/{locomotiveId}")
     public List<Alert> getAlerts(@PathVariable String locomotiveId) {
         return alertRepository.findTop50ByLocomotiveIdOrderByTriggeredAtDesc(locomotiveId);
     }
 
-    /** GET /api/v1/alerts/{locomotiveId}/active — only active */
     @GetMapping("/{locomotiveId}/active")
     public List<Alert> getActiveAlerts(@PathVariable String locomotiveId) {
         return alertRepository.findByLocomotiveIdAndStatusOrderByTriggeredAtDesc(
             locomotiveId, Alert.Status.ACTIVE);
     }
 
-    /** GET /api/v1/alerts/{locomotiveId}/history?from=...&to=... */
     @GetMapping("/{locomotiveId}/history")
     public List<Alert> getHistory(
             @PathVariable String locomotiveId,
@@ -48,7 +45,6 @@ public class AlertController {
             locomotiveId, from, to);
     }
 
-    /** POST /api/v1/alerts/{id}/acknowledge — dispatcher acknowledges alert */
     @PostMapping("/{id}/acknowledge")
     public ResponseEntity<Alert> acknowledge(@PathVariable UUID id) {
         return alertRepository.findById(id)
@@ -60,7 +56,6 @@ public class AlertController {
             .orElse(ResponseEntity.notFound().build());
     }
 
-    /** POST /api/v1/alerts/{id}/resolve — manually resolve */
     @PostMapping("/{id}/resolve")
     public ResponseEntity<Alert> resolve(@PathVariable UUID id) {
         return alertRepository.findById(id)
@@ -72,13 +67,11 @@ public class AlertController {
             .orElse(ResponseEntity.notFound().build());
     }
 
-    /** GET /api/v1/alerts/thresholds — current threshold config */
     @GetMapping("/thresholds")
     public List<AlertThreshold> getThresholds() {
         return thresholdRepository.findAll();
     }
 
-    /** PUT /api/v1/alerts/thresholds/{id} — update threshold (without recompilation!) */
     @PutMapping("/thresholds/{id}")
     public ResponseEntity<AlertThreshold> updateThreshold(
             @PathVariable UUID id, @RequestBody AlertThreshold update) {

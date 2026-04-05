@@ -32,7 +32,7 @@ public class AlertEvaluator {
     private final ObjectMapper objectMapper;
     private final int cooldownSeconds;
 
-    private volatile Map<String, AlertThreshold> thresholdCache = new HashMap<>();
+    private volatile List<AlertThreshold> thresholdCache = new ArrayList<>();
     private volatile long lastCacheRefresh = 0;
 
     private final ConcurrentHashMap<String, Instant> cooldowns = new ConcurrentHashMap<>();
@@ -56,12 +56,13 @@ public class AlertEvaluator {
         Map<String, Double> params = envelope.getParameters();
         String locoId = envelope.getLocomotiveId();
         List<AlertEvent> newEvents = new ArrayList<>();
+        Set<String> evaluatedParams = new HashSet<>();
 
-        for (Map.Entry<String, AlertThreshold> entry : thresholdCache.entrySet()) {
-            String paramName = entry.getKey();
-            AlertThreshold threshold = entry.getValue();
-
+        for (AlertThreshold threshold : thresholdCache) {
             if (!isApplicable(threshold.getApplicableTo(), envelope.getLocomotiveType())) continue;
+
+            String paramName = threshold.getParamName();
+            if (evaluatedParams.contains(paramName)) continue;
 
             Double value = params.get(paramName);
             if (value == null) continue;
@@ -73,6 +74,7 @@ public class AlertEvaluator {
                 Instant lastFired = cooldowns.get(cooldownKey);
                 if (lastFired != null &&
                     Duration.between(lastFired, Instant.now()).getSeconds() < cooldownSeconds) {
+                    evaluatedParams.add(paramName);
                     continue;
                 }
 
@@ -80,10 +82,12 @@ public class AlertEvaluator {
                 alertRepository.save(alert);
                 cooldowns.put(cooldownKey, Instant.now());
                 newEvents.add(AlertEvent.from(alert));
+                evaluatedParams.add(paramName);
 
                 log.info("[{}] ALERT {}: {} = {} (threshold breached)", locoId, triggered, paramName, value);
             } else {
                 autoResolve(locoId, paramName);
+                evaluatedParams.add(paramName);
             }
         }
 
@@ -112,15 +116,13 @@ public class AlertEvaluator {
         alert.setTriggeredAt(Instant.now());
 
         if (severity == Severity.CRITICAL) {
-            double thresholdVal = threshold.getCriticalHigh() != null
-                ? threshold.getCriticalHigh() : threshold.getCriticalLow();
-            alert.setThresholdValue(thresholdVal);
+            boolean high = threshold.getCriticalHigh() != null && value >= threshold.getCriticalHigh();
+            alert.setThresholdValue(high ? threshold.getCriticalHigh() : threshold.getCriticalLow());
             alert.setMessage(threshold.getDisplayName() + " в критической зоне: " + value);
             alert.setRecommendation(threshold.getCriticalRecommendation());
         } else {
-            double thresholdVal = threshold.getWarningHigh() != null
-                ? threshold.getWarningHigh() : threshold.getWarningLow();
-            alert.setThresholdValue(thresholdVal);
+            boolean high = threshold.getWarningHigh() != null && value >= threshold.getWarningHigh();
+            alert.setThresholdValue(high ? threshold.getWarningHigh() : threshold.getWarningLow());
             alert.setMessage(threshold.getDisplayName() + " требует внимания: " + value);
             alert.setRecommendation(threshold.getWarningRecommendation());
         }
@@ -158,11 +160,9 @@ public class AlertEvaluator {
         long now = System.currentTimeMillis();
         if (now - lastCacheRefresh > 60_000) {
             List<AlertThreshold> all = thresholdRepository.findByEnabledTrue();
-            Map<String, AlertThreshold> newCache = new LinkedHashMap<>();
-            for (AlertThreshold t : all) newCache.put(t.getParamName(), t);
-            thresholdCache = newCache;
+            thresholdCache = all;
             lastCacheRefresh = now;
-            log.debug("Threshold cache refreshed: {} entries", newCache.size());
+            log.debug("Threshold cache refreshed: {} entries", all.size());
         }
     }
 }

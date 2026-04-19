@@ -43,6 +43,11 @@ redis:
   key:
     ttl-seconds: 300
 
+clickhouse:
+  url: ${SPRING_CLICKHOUSE_URL:jdbc:ch://${{ clickhouse-server.RAILWAY_PRIVATE_DOMAIN }}:8123/digitaltwin?ssl=false&connect_timeout=10000&socket_timeout=300000&compress=0}
+  username: ${CLICKHOUSE_USER:app}
+  password: ${CLICKHOUSE_PASS:app123}
+
 # Alert cooldown: don't re-fire same alert within N seconds
 alert:
   cooldown-seconds: 300
